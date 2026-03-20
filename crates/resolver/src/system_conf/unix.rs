@@ -14,7 +14,7 @@
 use std::fs::File;
 use std::io;
 use std::io::Read;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr, SocketAddrV6};
 use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
@@ -27,6 +27,27 @@ use crate::proto::rr::Name;
 use crate::proto::xfer::Protocol;
 
 const DEFAULT_PORT: u16 = 53;
+
+fn scoped_ip_to_socket_addr(
+    ip: &resolv_conf::ScopedIp,
+    port: u16,
+) -> Result<SocketAddr, io::Error> {
+    match ip {
+        resolv_conf::ScopedIp::V4(v4) => Ok(SocketAddr::new(IpAddr::V4(*v4), port)),
+        resolv_conf::ScopedIp::V6(v6, scope) => {
+            let scope_id = match scope.as_deref() {
+                Some(s) => s.parse::<u32>().map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("non-numeric IPv6 scope ID in resolv.conf: {s}"),
+                    )
+                })?,
+                None => 0,
+            };
+            Ok(SocketAddr::V6(SocketAddrV6::new(*v6, port, 0, scope_id)))
+        }
+    }
+}
 
 pub fn read_system_conf() -> Result<(ResolverConfig, ResolverOpts), ResolveError> {
     read_resolv_conf("/etc/resolv.conf")
@@ -70,8 +91,9 @@ fn into_resolver_config(
     // nameservers
     let mut nameservers = Vec::<NameServerConfig>::with_capacity(parsed_config.nameservers.len());
     for ip in &parsed_config.nameservers {
+        let addr = scoped_ip_to_socket_addr(ip, DEFAULT_PORT)?;
         nameservers.push(NameServerConfig {
-            socket_addr: SocketAddr::new(ip.into(), DEFAULT_PORT),
+            socket_addr: addr,
             protocol: Protocol::Udp,
             tls_dns_name: None,
             http_endpoint: None,
@@ -79,7 +101,7 @@ fn into_resolver_config(
             bind_addr: None,
         });
         nameservers.push(NameServerConfig {
-            socket_addr: SocketAddr::new(ip.into(), DEFAULT_PORT),
+            socket_addr: addr,
             protocol: Protocol::Tcp,
             tls_dns_name: None,
             http_endpoint: None,
