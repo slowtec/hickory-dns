@@ -9,7 +9,7 @@
 #![allow(clippy::use_self)]
 
 use std::collections::HashSet;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -195,6 +195,9 @@ impl ResolverConfig {
 pub struct NameServerConfig {
     /// The address which the DNS NameServer is registered at.
     pub ip: IpAddr,
+    /// IPv6 scope ID for link-local addresses (0 if not applicable).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub scope_id: u32,
     /// Whether to trust `NXDOMAIN` responses from upstream nameservers.
     ///
     /// When this is `true`, and an empty `NXDOMAIN` response with an empty answers set is
@@ -215,6 +218,7 @@ impl NameServerConfig {
     pub fn udp_and_tcp(ip: IpAddr) -> Self {
         Self {
             ip,
+            scope_id: 0,
             trust_negative_responses: true,
             connections: vec![ConnectionConfig::udp(), ConnectionConfig::tcp()],
         }
@@ -224,6 +228,7 @@ impl NameServerConfig {
     pub fn udp(ip: IpAddr) -> Self {
         Self {
             ip,
+            scope_id: 0,
             trust_negative_responses: true,
             connections: vec![ConnectionConfig::udp()],
         }
@@ -233,6 +238,7 @@ impl NameServerConfig {
     pub fn tcp(ip: IpAddr) -> Self {
         Self {
             ip,
+            scope_id: 0,
             trust_negative_responses: true,
             connections: vec![ConnectionConfig::tcp()],
         }
@@ -243,6 +249,7 @@ impl NameServerConfig {
     pub fn tls(ip: IpAddr, server_name: Arc<str>) -> Self {
         Self {
             ip,
+            scope_id: 0,
             trust_negative_responses: true,
             connections: vec![ConnectionConfig::tls(server_name)],
         }
@@ -253,6 +260,7 @@ impl NameServerConfig {
     pub fn https(ip: IpAddr, server_name: Arc<str>, path: Option<Arc<str>>) -> Self {
         Self {
             ip,
+            scope_id: 0,
             trust_negative_responses: true,
             connections: vec![ConnectionConfig::https(server_name, path)],
         }
@@ -263,6 +271,7 @@ impl NameServerConfig {
     pub fn quic(ip: IpAddr, server_name: Arc<str>) -> Self {
         Self {
             ip,
+            scope_id: 0,
             trust_negative_responses: true,
             connections: vec![ConnectionConfig::quic(server_name)],
         }
@@ -273,6 +282,7 @@ impl NameServerConfig {
     pub fn h3(ip: IpAddr, server_name: Arc<str>, path: Option<Arc<str>>) -> Self {
         Self {
             ip,
+            scope_id: 0,
             trust_negative_responses: true,
             connections: vec![ConnectionConfig::h3(server_name, path)],
         }
@@ -291,6 +301,7 @@ impl NameServerConfig {
     pub fn opportunistic_encryption(ip: IpAddr) -> Self {
         Self {
             ip,
+            scope_id: 0,
             trust_negative_responses: true,
             connections: vec![
                 ConnectionConfig::udp(),
@@ -311,8 +322,17 @@ impl NameServerConfig {
     ) -> Self {
         Self {
             ip,
+            scope_id: 0,
             trust_negative_responses,
             connections,
+        }
+    }
+
+    /// Returns a `SocketAddr` with the IPv6 scope ID applied.
+    pub fn socket_addr(&self, port: u16) -> SocketAddr {
+        match self.ip {
+            IpAddr::V4(v4) => SocketAddr::V4(SocketAddrV4::new(v4, port)),
+            IpAddr::V6(v6) => SocketAddr::V6(SocketAddrV6::new(v6, port, 0, self.scope_id)),
         }
     }
 }

@@ -131,7 +131,7 @@ impl<O: OnSend + Unpin> ConnectionProvider for MockConnProvider<O> {
 
     fn new_connection(
         &self,
-        _: IpAddr,
+        _: SocketAddr,
         _config: &ConnectionConfig,
         _cx: &PoolContext,
     ) -> Result<Self::FutureConn, NetError> {

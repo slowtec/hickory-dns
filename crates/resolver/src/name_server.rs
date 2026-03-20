@@ -230,7 +230,7 @@ impl<P: ConnectionProvider> NameServer<P> {
         }
 
         let handle = Box::pin(self.connection_provider.new_connection(
-            self.config.ip,
+            self.config.socket_addr(config.port),
             config,
             cx,
         )?)
@@ -376,7 +376,7 @@ impl<P: ConnectionProvider> ProbeRequest<P> {
             proto: config.protocol.to_protocol(),
             connecting: ns
                 .connection_provider
-                .new_connection(ns.config.ip, config, cx)?,
+                .new_connection(ns.config.socket_addr(config.port), config, cx)?,
             context: cx.clone(),
             #[cfg(all(feature = "metrics", any(feature = "__tls", feature = "__quic")))]
             metrics,
@@ -2091,12 +2091,12 @@ mod mock_provider {
     #[derive(Clone)]
     pub(super) struct MockProvider {
         pub(super) runtime: MockSyncRuntimeProvider,
-        pub(super) new_connection_calls: Arc<SyncMutex<Vec<(IpAddr, ProtocolConfig)>>>,
+        pub(super) new_connection_calls: Arc<SyncMutex<Vec<(SocketAddr, ProtocolConfig)>>>,
         pub(super) new_connection_error: Option<NetError>,
     }
 
     impl MockProvider {
-        pub(super) fn new_connection_calls(&self) -> Vec<(IpAddr, ProtocolConfig)> {
+        pub(super) fn new_connection_calls(&self) -> Vec<(SocketAddr, ProtocolConfig)> {
             self.new_connection_calls.lock().clone()
         }
     }
@@ -2108,13 +2108,13 @@ mod mock_provider {
 
         fn new_connection(
             &self,
-            ip: IpAddr,
+            remote_addr: SocketAddr,
             config: &ConnectionConfig,
             _cx: &PoolContext,
         ) -> Result<Self::FutureConn, NetError> {
             self.new_connection_calls
                 .lock()
-                .push((ip, config.protocol.clone()));
+                .push((remote_addr, config.protocol.clone()));
 
             Ok(Box::pin(future::ready(match &self.new_connection_error {
                 Some(err) => Err(err.clone()),

@@ -7,9 +7,9 @@
 
 use std::future::Future;
 use std::marker::Unpin;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 #[cfg(feature = "__quic")]
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::pin::Pin;
 #[cfg(any(feature = "__tls", feature = "__https"))]
 use std::sync::Arc;
@@ -58,7 +58,7 @@ pub trait ConnectionProvider: 'static + Clone + Send + Sync + Unpin {
     /// Create a new connection.
     fn new_connection(
         &self,
-        ip: IpAddr,
+        remote_addr: SocketAddr,
         config: &ConnectionConfig,
         cx: &PoolContext,
     ) -> Result<Self::FutureConn, NetError>;
@@ -74,11 +74,10 @@ impl<P: RuntimeProvider> ConnectionProvider for P {
 
     fn new_connection(
         &self,
-        ip: IpAddr,
+        remote_addr: SocketAddr,
         config: &ConnectionConfig,
         cx: &PoolContext,
     ) -> Result<Self::FutureConn, NetError> {
-        let remote_addr = SocketAddr::new(ip, config.port);
         match (&config.protocol, self.quic_binder()) {
             (ProtocolConfig::Udp, _) => {
                 let (timeout, os_port_selection, avoid_local_udp_ports, bind_addr, provider) = (

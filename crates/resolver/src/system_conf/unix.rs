@@ -13,6 +13,7 @@
 
 use std::fs;
 use std::io;
+use std::net::IpAddr;
 use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
@@ -23,6 +24,27 @@ use crate::proto::rr::Name;
 
 pub fn read_system_conf() -> Result<(ResolverConfig, ResolverOpts), NetError> {
     read_resolv_conf("/etc/resolv.conf")
+}
+
+fn scoped_ip_to_nameserver(ip: &resolv_conf::ScopedIp) -> Result<NameServerConfig, io::Error> {
+    let (addr, scope_id) = match ip {
+        resolv_conf::ScopedIp::V4(v4) => (IpAddr::V4(*v4), 0),
+        resolv_conf::ScopedIp::V6(v6, scope) => {
+            let scope_id = match scope.as_deref() {
+                Some(s) => s.parse::<u32>().map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("non-numeric IPv6 scope ID in resolv.conf: {s}"),
+                    )
+                })?,
+                None => 0,
+            };
+            (IpAddr::V6(*v6), scope_id)
+        }
+    };
+    let mut config = NameServerConfig::udp_and_tcp(addr);
+    config.scope_id = scope_id;
+    Ok(config)
 }
 
 fn read_resolv_conf<P: AsRef<Path>>(path: P) -> Result<(ResolverConfig, ResolverOpts), NetError> {
@@ -52,11 +74,11 @@ fn into_resolver_config(
     };
 
     // nameservers
-    let nameservers = parsed_config
+    let nameservers: Vec<NameServerConfig> = parsed_config
         .nameservers
         .iter()
-        .map(|ip| NameServerConfig::udp_and_tcp(ip.into()))
-        .collect::<Vec<_>>();
+        .map(scoped_ip_to_nameserver)
+        .collect::<Result<_, _>>()?;
     if nameservers.is_empty() {
         Err(io::Error::other("no nameservers found in config"))?;
     }
